@@ -9,11 +9,11 @@ from tabulate import tabulate
 RESERVED = ['Item', 'Description', 'Price', 'Tax?', '']
 TAX = 1.0925
 
-def resolve_prices(people, item):
+def resolve_prices(people, item, tax):
     star_value = compute_star_value(people, item)
     allocations = [parse_allocation(item[person], star_value)
                    for person in people]
-    total_price = unallocated = parse_price(item)
+    total_price = unallocated = parse_price(item, tax)
     prices = []
     for allocation in allocations:
         if not allocation:
@@ -47,10 +47,10 @@ def compute_star_value(people, item):
         raise ValueError('{} is overallocated!'.format(item['Item']))
     return (1 - allocated) / stars if stars else float('inf')
 
-def parse_price(item):
+def parse_price(item, tax):
     price = int(item['Price'].replace('$', '').replace('.', ''))
     if item['Tax?']:
-        price = round(price * TAX)
+        price = round(price * tax)
     return price
 
 def parse_allocation(allocation, star_value):
@@ -70,7 +70,8 @@ def fmt(price):
 @click.command()
 @click.option('--csv', type=click.File('r'))
 @click.option('--gsheet')
-def main(csv, gsheet):
+@click.option('--tax', type=float, default=9.25)
+def main(csv, gsheet, tax):
     if csv is None and gsheet is None:
         print('No input specified.')
     if csv is not None and gsheet is not None:
@@ -82,11 +83,17 @@ def main(csv, gsheet):
         r.raise_for_status()
         buf = io.StringIO(r.text)
         reader = DictReader(buf)
+    if tax < 1:
+        # tax is probably specified as fraction instead of percentage points
+        tax += 1
+    else:
+        tax += 100
+        tax /= 100
     people = [name for name in reader.fieldnames if name not in RESERVED]
     receipts = {name: [] for name in people}
     totals = {name: 0 for name in people}
     for item in reader:
-        prices, allocations = resolve_prices(people, item)
+        prices, allocations = resolve_prices(people, item, tax)
         for person, price, allocation in zip(people, prices, allocations):
             if price:
                 totals[person] += price
